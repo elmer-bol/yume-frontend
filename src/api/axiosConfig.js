@@ -3,7 +3,8 @@ import axios from 'axios';
 
 const api = axios.create({
   // Asegúrate de que este puerto coincida con tu FastAPI
-  baseURL: 'http://localhost:8000/v1', 
+  // baseURL: 'http://localhost:8000/v1', 
+  baseURL: 'https://yume-backend-edgp.onrender.com', 
   headers: {
     'Content-Type': 'application/json',
   },
