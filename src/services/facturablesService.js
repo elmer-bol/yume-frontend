@@ -35,6 +35,12 @@ export const facturablesService = {
         const response = await api.patch(`/facturables/${id}/cancel`);
         return response.data;
     },
+    
+    // 6. OBTENER POR UNIDAD
+    obtenerPorUnidad: async (idUnidad) => {
+        const response = await api.get(`/facturables/unidad/${idUnidad}`);
+        return response.data;
+    },
 
     // ------------------------------------------------------------------
     // MÉTODOS DE GENERACIÓN AUTOMÁTICA
@@ -51,6 +57,14 @@ export const facturablesService = {
         const response = await api.post('/facturables/generar-contrato', datos);
         return response.data;
     },
+    // 8. ANULACION MASIVA
+    anularMasivo: async (datos) => {
+        // CORRECCIÓN 1: Usamos 'api' en lugar de 'axios'
+        // CORRECCIÓN 2: Escribimos la ruta completa '/facturables/...' en lugar de ENDPOINT
+        const response = await api.post('/facturables/anulacion-masiva', datos);
+        return response.data;
+    },
+
 
     // ------------------------------------------------------------------
     // MÉTODOS DE CAJA / COBRANZA
@@ -74,6 +88,7 @@ export const facturablesService = {
             return [];
         }
     }
+    
 };
 
 // 2. EXPORTACIÓN POR DEFECTO (Para componentes nuevos)

@@ -5,10 +5,11 @@ export const APP_MODE = 'EDIFICIO'; // O 'COLEGIO', lo que quieras probar
 const DICTIONARY = {
     EDIFICIO: {
         appName: "YUME Edificios", // <--- ¡AQUÍ ESTÁ!
-        persona: "Inquilino",
-        personas: "Inquilinos",
+        persona: "Persona",
+        personas: "Personas",
         unidad: "Departamento",
         unidades: "Departamentos",
+        deuda: "Cuota",
         relacion: "Contrato",
         concepto: "Expensa",
         periodo: "Mes",
@@ -20,6 +21,7 @@ const DICTIONARY = {
         personas: "Tutores",
         unidad: "Estudiante", 
         unidades: "Estudiantes",
+        deuda: "Mensualidade",
         relacion: "Inscripción",
         concepto: "Pensión",
         periodo: "Mes",
@@ -31,6 +33,7 @@ const DICTIONARY = {
         personas: "Clientes",
         unidad: "Cuenta",
         unidades: "Cuentas",
+        deuda: "Cuota",
         relacion: "Contrato",
         concepto: "Concepto",
         periodo: "Periodo",

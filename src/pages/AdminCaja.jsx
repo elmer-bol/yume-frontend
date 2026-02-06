@@ -7,6 +7,7 @@ import {
     DialogActions, Divider, Checkbox, Tooltip, Collapse
 } from '@mui/material';
 
+// Iconos
 import SearchIcon from '@mui/icons-material/Search';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import HistoryIcon from '@mui/icons-material/History';
@@ -14,21 +15,31 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import PrintIcon from '@mui/icons-material/Print';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'; // Icono extra para deuda
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'; 
+import HandshakeIcon from '@mui/icons-material/Handshake';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz'; 
+import PersonIcon from '@mui/icons-material/Person';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday'; // <--- Icono Fecha
 
+// Servicios
 import { mediosService } from '../services/mediosService';
 import { contratosService } from '../services/contratosService';
 import { facturablesService } from '../services/facturablesService';
 import { ingresoService } from '../services/ingresoService';
+import { planesService } from '../services/planesService';
+// import { cajaService } from '../services/cajaService'; // No se usa por ahora
 
-// Función auxiliar para encontrar el ID
+// Componentes
+import ModalTransferencia from '../components/ModalTransferencia';
+
+// Función auxiliar para ID
 const obtenerId = (t) => {
     if (!t) return "";
     return t.id_transaccion_ingreso || t.id_transaccion || t.id || "";
 };
 
 // =============================================================================
-// COMPONENTE AUXILIAR: FILA EXPANDIBLE (Row)
+// COMPONENTE AUXILIAR: FILA EXPANDIBLE
 // =============================================================================
 function Row({ row, onImprimir, onAnular }) {
     const [open, setOpen] = useState(false);
@@ -38,11 +49,6 @@ function Row({ row, onImprimir, onAnular }) {
         bgcolor: isAnulado ? '#ffebee' : 'inherit',
         opacity: isAnulado ? 0.7 : 1,
         '& > *': { borderBottom: 'unset' }
-    };
-    const textStyle = {
-        color: isAnulado ? 'text.secondary' : 'inherit',
-        textDecoration: isAnulado ? 'line-through' : 'none',
-        fontWeight: isAnulado ? 'normal' : 'bold'
     };
 
     return (
@@ -63,11 +69,22 @@ function Row({ row, onImprimir, onAnular }) {
                 <TableCell>
                     <Chip label={row.relacion_cliente?.unidad?.identificador_unico || "S/N"} size="small" color="primary" variant="outlined" />
                 </TableCell>
-                <TableCell sx={{ color: 'green', ...textStyle }}>
+                <TableCell sx={{ color: 'green', fontWeight: 'bold' }}>
                     Bs {parseFloat(row.monto_total).toFixed(2)}
                 </TableCell>
                 <TableCell>{row.descripcion || '-'}</TableCell>
-                <TableCell>{row.id_usuario_creador === 1 ? "Admin" : "Cajero"}</TableCell>
+                <TableCell>
+                    <Box display="flex" alignItems="center" gap={0.5}>
+                        <PersonIcon fontSize="small" color="action" />
+                        <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
+                            {
+                                row.usuario_creador?.persona?.nombres 
+                                ? `${row.usuario_creador.persona.nombres} ${row.usuario_creador.persona.apellidos || ''}`.toLowerCase()
+                                : (row.usuario_creador?.email || (row.id_usuario_creador === 1 ? "Admin" : `Cajero ID:${row.id_usuario_creador}`))
+                            }
+                        </Typography>
+                    </Box>
+                </TableCell>
                 <TableCell align="center">
                     {!isAnulado && (
                         <IconButton color="primary" onClick={() => onImprimir(row)}>
@@ -145,6 +162,7 @@ function Row({ row, onImprimir, onAnular }) {
 // COMPONENTE PRINCIPAL: AdminCaja
 // =============================================================================
 const AdminCaja = () => {
+    // --- ESTADOS ---
     const [medios, setMedios] = useState([]);
     const [listaContratos, setListaContratos] = useState([]);
     const [contratosFiltrados, setContratosFiltrados] = useState([]);
@@ -154,16 +172,31 @@ const AdminCaja = () => {
     const [loading, setLoading] = useState(false);
     const [seleccionados, setSeleccionados] = useState([]);
     const [historial, setHistorial] = useState([]);
+    
+    // Modales
     const [reciboOpen, setReciboOpen] = useState(false);
     const [datoRecibo, setDatoRecibo] = useState(null);
+    const [planOpen, setPlanOpen] = useState(false);
+    const [transferenciaOpen, setTransferenciaOpen] = useState(false);
+
+    // Formularios
     const [formPago, setFormPago] = useState({
         id_medio_ingreso: '',
         monto_total: '',
         num_documento: '',
-        descripcion: ''
+        descripcion: '',
+        fecha: new Date().toISOString().split('T')[0] // <--- NUEVO: Fecha por defecto HOY
     });
+
+    const [planForm, setPlanForm] = useState({
+        numero_cuotas: 2,
+        fecha_inicio: new Date().toISOString().split('T')[0],
+        observaciones: ''
+    });
+
     const [mensaje, setMensaje] = useState({ open: false, text: '', type: 'success' });
 
+    // --- CARGA INICIAL ---
     useEffect(() => {
         const initData = async () => {
             try {
@@ -177,14 +210,16 @@ const AdminCaja = () => {
         initData();
     }, []);
 
+    // --- CALCULO AUTOMATICO MONTO ---
     useEffect(() => {
         const totalSeleccionado = deudas
             .filter(d => seleccionados.includes(d.id_item))
             .reduce((sum, item) => sum + parseFloat(item.saldo_pendiente), 0);
-        if (totalSeleccionado > 0) {
+        
+        if (totalSeleccionado > 0 && !planOpen) {
             setFormPago(prev => ({ ...prev, monto_total: totalSeleccionado }));
         }
-    }, [seleccionados, deudas]);
+    }, [seleccionados, deudas, planOpen]);
 
     const cargarHistorialPagos = async () => {
         try {
@@ -210,6 +245,7 @@ const AdminCaja = () => {
         setContratosFiltrados([]);
         setBusqueda('');
         setDeudas([]);
+        setSeleccionados([]);
         try {
             if (contrato.id_unidad) {
                 const items = await facturablesService.obtenerDeudaPendiente(contrato.id_unidad);
@@ -220,6 +256,7 @@ const AdminCaja = () => {
 
     const handleChange = (e) => setFormPago({ ...formPago, [e.target.name]: e.target.value });
 
+    // --- COBRAR ---
     const handlePagar = async () => {
         if (!contratoSeleccionado) return;
         if (!formPago.id_medio_ingreso) return alert("Seleccione medio de pago");
@@ -227,6 +264,7 @@ const AdminCaja = () => {
         setLoading(true);
         try {
             let dineroDisponible = parseFloat(formPago.monto_total);
+            
             const detallesPago = seleccionados.map(id => {
                 const item = deudas.find(d => d.id_item === id);
                 if (!item) return null;
@@ -251,7 +289,7 @@ const AdminCaja = () => {
                 id_relacion: contratoSeleccionado.id_relacion,
                 id_medio_ingreso: formPago.id_medio_ingreso,
                 monto_total: parseFloat(formPago.monto_total),
-                fecha: new Date().toISOString().split('T')[0],
+                fecha: formPago.fecha, // <--- ENVIAMOS LA FECHA SELECCIONADA POR EL USUARIO
                 num_documento: formPago.num_documento,
                 descripcion: formPago.descripcion,
                 id_usuario_creador: 1, 
@@ -262,7 +300,16 @@ const AdminCaja = () => {
 
             await ingresoService.crearIngreso(payload);
             setMensaje({ open: true, text: "Pago registrado exitosamente", type: "success" });
-            setFormPago({ id_medio_ingreso: '', monto_total: '', num_documento: '', descripcion: '' });
+            
+            // RESETEAMOS FORMULARIO
+            setFormPago({ 
+                id_medio_ingreso: '', 
+                monto_total: '', 
+                num_documento: '', 
+                descripcion: '', 
+                fecha: new Date().toISOString().split('T')[0] // Reseteamos a HOY
+            });
+            
             setSeleccionados([]); 
             seleccionarContrato(contratoSeleccionado); 
             cargarHistorialPagos();
@@ -274,6 +321,47 @@ const AdminCaja = () => {
                 mensajeError = Array.isArray(det) ? det.map(d => `${d.msg}`).join("\n") : det;
             }
             alert("🛑 ERROR: " + mensajeError);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // --- PLANES ---
+    const handleAbrirPlan = () => {
+        if (seleccionados.length === 0) {
+            alert("Seleccione al menos una deuda para refinanciar.");
+            return;
+        }
+        setPlanOpen(true);
+    };
+
+    const handleCrearPlan = async () => { /* ... Lógica Plan igual ... */ 
+        if (!contratoSeleccionado) return;
+        setLoading(true);
+        try {
+            const totalDeudaSeleccionada = deudas
+                .filter(d => seleccionados.includes(d.id_item))
+                .reduce((sum, item) => sum + parseFloat(item.saldo_pendiente), 0);
+
+            const montoCuota = (totalDeudaSeleccionada / planForm.numero_cuotas).toFixed(2);
+
+            const payload = {
+                id_persona: contratoSeleccionado.id_persona || contratoSeleccionado.persona.id_persona,
+                items_ids: seleccionados,
+                numero_cuotas: parseInt(planForm.numero_cuotas),
+                monto_cuota_mensual: parseFloat(montoCuota),
+                fecha_inicio_pago: planForm.fecha_inicio,
+                observaciones: planForm.observaciones || `Refinanciamiento ${seleccionados.length} items.`
+            };
+
+            await planesService.crearPlan(payload);
+            setMensaje({ open: true, text: "✅ Plan creado correctamente. Deudas congeladas.", type: "success" });
+            setPlanOpen(false);
+            setSeleccionados([]);
+            seleccionarContrato(contratoSeleccionado);
+        } catch (error) {
+            console.error("Error creando plan:", error);
+            alert("Error al crear plan");
         } finally {
             setLoading(false);
         }
@@ -309,156 +397,241 @@ const AdminCaja = () => {
     const imprimirNavegador = () => { window.print(); };
     const totalDeuda = deudas.reduce((acc, item) => acc + parseFloat(item.saldo_pendiente), 0);
 
-    return (
-        <Container maxWidth="xl" sx={{ mt: 3, mb: 5 }}>
-            <Typography variant="h4" sx={{ mb: 3, fontWeight: 'bold', color: '#1565c0' }}>
-                Caja / Cobranzas
-            </Typography>
+    // MANEJADOR PARA EL FORMULARIO DEL PLAN (Nuevo)
+    const handlePlanChange = (e) => {
+        setPlanForm({ ...planForm, [e.target.name]: e.target.value });
+    };
 
-            <Grid container spacing={3}>
-                
-                {/* 1. FILA SUPERIOR: BUSCADOR (Izquierda) + DEUDAS (Derecha) */}
-                <Grid item xs={12} md={4}>
-                    <Paper sx={{ p: 3, height: '100%' }}>
-                        <Typography variant="h6"><SearchIcon sx={{ verticalAlign: 'middle' }}/> Inquilino</Typography>
-                        <Box position="relative" sx={{ mt: 2 }}>
-                            <TextField fullWidth label="Buscar nombre o unidad..." value={busqueda} onChange={(e) => handleBuscar(e.target.value)} autoComplete="off" />
+    // Calculamos la cuota estimada para mostrarla en vivo
+    const totalParaPlan = deudas
+        .filter(d => seleccionados.includes(d.id_item || d.id))
+        .reduce((sum, item) => sum + parseFloat(item.saldo_pendiente), 0);
+        
+    const cuotaEstimada = planForm.numero_cuotas > 0 
+        ? (totalParaPlan / planForm.numero_cuotas).toFixed(2) 
+        : 0;
+
+    return (
+        <Container maxWidth="xl" sx={{ mt: 3, mb: 4 }}>
+            
+            {/* 1. CABECERA */}
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#1565c0', display: 'flex', alignItems: 'center' }}>
+                    <AttachMoneyIcon sx={{ mr: 1, fontSize: 32 }}/> Caja y Cobranzas
+                </Typography>
+                <Button variant="outlined" startIcon={<SwapHorizIcon />} onClick={() => setTransferenciaOpen(true)}>
+                    Transferencia Interna
+                </Button>
+            </Box>
+
+            {/* 2. BUSCADOR */}
+            <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: '#f8f9fa', border: '1px solid #e0e0e0', borderRadius: 2 }}>
+                <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} md={5}>
+                        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            <SearchIcon sx={{ fontSize: 16, verticalAlign: '-2px' }}/> Buscar Inquilino
+                        </Typography>
+                        <Box position="relative">
+                            <TextField 
+                                fullWidth 
+                                placeholder="Escriba Nombre o Unidad..." 
+                                value={busqueda} 
+                                onChange={(e) => handleBuscar(e.target.value)} 
+                                size="small"
+                                sx={{ bgcolor: 'white' }}
+                            />
                             {contratosFiltrados.length > 0 && (
-                                <Paper sx={{ position: 'absolute', width: '100%', zIndex: 10, maxHeight: 300, overflow: 'auto' }}>
+                                <Paper sx={{ position: 'absolute', width: '100%', zIndex: 99, maxHeight: 300, overflow: 'auto', mt: 0.5, boxShadow: 3 }}>
                                     {contratosFiltrados.map((c) => (
-                                        <Box key={c.id_relacion} sx={{ p: 2, cursor: 'pointer', borderBottom: '1px solid #eee', '&:hover': { bgcolor: '#f5f5f5' } }} onClick={() => seleccionarContrato(c)}>
-                                            <Typography fontWeight="bold">{c.persona?.nombres} {c.persona?.apellidos}</Typography>
+                                        <Box key={c.id_relacion} sx={{ p: 1.5, cursor: 'pointer', borderBottom: '1px solid #eee', '&:hover': { bgcolor: '#e3f2fd' } }} onClick={() => seleccionarContrato(c)}>
+                                            <Typography fontWeight="bold" variant="body2">{c.persona?.nombres} {c.persona?.apellidos}</Typography>
                                             <Typography variant="caption" color="primary">UNIDAD: {c.unidad?.identificador_unico}</Typography>
                                         </Box>
                                     ))}
                                 </Paper>
                             )}
                         </Box>
-                        {contratoSeleccionado && (
-                            <Box sx={{ mt: 3, p: 2, bgcolor: '#e3f2fd', borderRadius: 2 }}>
-                                <Typography variant="subtitle1" fontWeight="bold" color="primary">
-                                    {contratoSeleccionado.persona?.nombres} {contratoSeleccionado.persona?.apellidos}
-                                </Typography>
-                                <Typography variant="body2">
-                                    Unidad: {contratoSeleccionado.unidad?.identificador_unico}
-                                </Typography>
-                            </Box>
-                        )}
-                    </Paper>
-                </Grid>
-
-                <Grid item xs={12} md={8}>
-                    <Paper sx={{ p: 2, height: '100%', minHeight: 300 }}>
-                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                            <Typography variant="h6"><ReceiptLongIcon sx={{ verticalAlign: 'middle', mr: 1 }}/> Deudas Pendientes</Typography>
-                            <Chip label={`Total: Bs ${totalDeuda.toFixed(2)}`} color={totalDeuda > 0 ? "error" : "success"} />
-                        </Box>
+                    </Grid>
+                    <Grid item xs={12} md={7}>
                         {contratoSeleccionado ? (
-                            <TableContainer sx={{ maxHeight: 300 }}>
-                                <Table size="small" stickyHeader>
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell padding="checkbox"></TableCell>
-                                            <TableCell>Concepto</TableCell>
-                                            <TableCell>Periodo</TableCell>
-                                            <TableCell align="right">Saldo</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {deudas.map((d) => {
-                                            const idReal = d.id_item || d.id;
-                                            const isSelected = seleccionados.indexOf(idReal) !== -1;
-                                            return (
-                                                <TableRow key={idReal} hover onClick={() => handleToggleDeuda(idReal)} role="checkbox" aria-checked={isSelected} selected={isSelected} sx={{ cursor: 'pointer' }}>
-                                                    <TableCell padding="checkbox"><Checkbox checked={isSelected} /></TableCell>
-                                                    <TableCell>{d.concepto?.nombre} {d.descripcion ? `- ${d.descripcion}` : ''}</TableCell>
-                                                    <TableCell>{d.periodo}</TableCell>
-                                                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>{d.saldo_pendiente}</TableCell>
-                                                </TableRow>
-                                            );
-                                        })}
-                                        {deudas.length === 0 && <TableRow><TableCell colSpan={4} align="center">¡Al día! No hay deuda pendiente. 🌟</TableCell></TableRow>}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                        ) : (
-                            <Box display="flex" justifyContent="center" alignItems="center" height="200px" color="text.secondary">
-                                <Typography>Seleccione un inquilino para ver sus deudas.</Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 1, border: '1px dashed #bdbdbd', borderRadius: 1, bgcolor: 'white' }}>
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">CLIENTE</Typography>
+                                    <Typography variant="subtitle1" fontWeight="bold">{contratoSeleccionado.persona?.nombres} {contratoSeleccionado.persona?.apellidos}</Typography>
+                                </Box>
+                                <Divider orientation="vertical" flexItem />
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">UNIDAD</Typography>
+                                    <Chip label={contratoSeleccionado.unidad?.identificador_unico} color="primary" size="small" />
+                                </Box>
+                                <Box sx={{ flexGrow: 1 }} />
+                                <Chip label={totalDeuda > 0 ? `DEUDA: Bs ${totalDeuda.toFixed(2)}` : "AL DÍA"} color={totalDeuda > 0 ? "error" : "success"} variant={totalDeuda > 0 ? "filled" : "outlined"} />
                             </Box>
+                        ) : (
+                            <Typography variant="body2" color="text.disabled" align="center">👈 Seleccione un inquilino para comenzar.</Typography>
                         )}
+                    </Grid>
+                </Grid>
+            </Paper>
+
+            {/* 3. ZONA DE TRABAJO */}
+            <Grid container spacing={3} alignItems="flex-start">
+                
+                {/* IZQUIERDA: DETALLE DE DEUDAS */}
+                <Grid item xs={12} md={8} lg={9}>
+                    <Paper elevation={3} sx={{ overflow: 'hidden', border: '1px solid #e0e0e0', minHeight: 500 }}>
+                        <Box sx={{ p: 2, bgcolor: '#fff', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="h6" fontWeight="bold" color="#424242">
+                                <ReceiptLongIcon sx={{ verticalAlign: 'middle', mr: 1, color: '#ef6c00' }}/> 
+                                Detalle de Deudas
+                            </Typography>
+                            <Button size="small" startIcon={<HandshakeIcon />} onClick={handleAbrirPlan} disabled={seleccionados.length === 0}>
+                                Crear Plan
+                            </Button>
+                        </Box>
+
+                        <Box sx={{ p: 0 }}>
+                            {contratoSeleccionado ? (
+                                <TableContainer sx={{ maxHeight: 450 }}>
+                                    <Table stickyHeader size="small">
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell padding="checkbox" sx={{ bgcolor: '#fafafa' }}></TableCell>
+                                                <TableCell sx={{ bgcolor: '#fafafa', fontWeight: 'bold' }}>Concepto</TableCell>
+                                                <TableCell sx={{ bgcolor: '#fafafa', fontWeight: 'bold' }}>Periodo</TableCell>
+                                                <TableCell align="right" sx={{ bgcolor: '#fafafa', fontWeight: 'bold' }}>Saldo</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {deudas.map((d) => {
+                                                const idReal = d.id_item || d.id;
+                                                const isSelected = seleccionados.indexOf(idReal) !== -1;
+                                                return (
+                                                    <TableRow key={idReal} hover onClick={() => handleToggleDeuda(idReal)} role="checkbox" aria-checked={isSelected} selected={isSelected} sx={{ cursor: 'pointer' }}>
+                                                        <TableCell padding="checkbox"><Checkbox checked={isSelected} size="small" /></TableCell>
+                                                        <TableCell>
+                                                            <Typography variant="body2">{d.concepto?.nombre}</Typography>
+                                                            {d.descripcion && <Typography variant="caption" color="text.secondary">{d.descripcion}</Typography>}
+                                                        </TableCell>
+                                                        <TableCell>{d.periodo}</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 'bold', color: '#d32f2f' }}>{parseFloat(d.saldo_pendiente).toFixed(2)}</TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                            {deudas.length === 0 && (
+                                                <TableRow><TableCell colSpan={4} align="center" sx={{ py: 5 }}>✨ ¡Al día! No tiene deuda pendiente.</TableCell></TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            ) : (
+                                <Box sx={{ p: 10, textAlign: 'center', color: '#bdbdbd' }}>
+                                    <Typography variant="h6">Esperando selección...</Typography>
+                                </Box>
+                            )}
+                        </Box>
                     </Paper>
                 </Grid>
 
-                {/* 2. FILA MEDIA: REGISTRO DE PAGO (Horizontal) */}
-                <Grid item xs={12}>
-                    <Card sx={{ bgcolor: '#fff', border: '1px solid #ccc' }}>
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom color="primary"><AttachMoneyIcon /> Registrar Nuevo Pago</Typography>
-                            <Grid container spacing={2} alignItems="center">
-                                <Grid item xs={12} md={3}>
-                                    <TextField select fullWidth label="Medio Pago" name="id_medio_ingreso" value={formPago.id_medio_ingreso} onChange={handleChange} size="small">
-                                        {medios.map(m => <MenuItem key={m.id_medio_ingreso} value={m.id_medio_ingreso}>{m.nombre}</MenuItem>)}
-                                    </TextField>
-                                </Grid>
-                                <Grid item xs={12} md={2}>
-                                    <TextField fullWidth type="number" label="Monto" name="monto_total" value={formPago.monto_total} onChange={handleChange} size="small" InputProps={{ startAdornment: <InputAdornment position="start">Bs</InputAdornment> }} />
-                                </Grid>
-                                <Grid item xs={12} md={3}>
-                                    <TextField fullWidth label="Referencia / Recibo" name="num_documento" value={formPago.num_documento} onChange={handleChange} size="small" />
-                                </Grid>
-                                <Grid item xs={12} md={2}>
-                                    <TextField fullWidth label="Nota" name="descripcion" value={formPago.descripcion} onChange={handleChange} size="small" />
-                                </Grid>
-                                <Grid item xs={12} md={2}>
-                                    <Button fullWidth variant="contained" color="success" size="large" onClick={handlePagar} disabled={!contratoSeleccionado || loading}>
-                                        {loading ? "..." : "COBRAR"}
-                                    </Button>
-                                </Grid>
-                            </Grid>
+                {/* DERECHA: TERMINAL DE COBRO */}
+                <Grid item xs={12} md={4} lg={3}>
+                    <Card elevation={6} sx={{ position: 'sticky', top: 20, borderTop: '4px solid #2e7d32' }}>
+                        <Box sx={{ bgcolor: '#e8f5e9', p: 1.5, textAlign: 'center', borderBottom: '1px solid #c8e6c9' }}>
+                            <Typography variant="subtitle2" fontWeight="bold" color="#1b5e20">
+                                <AttachMoneyIcon sx={{ fontSize: 18, verticalAlign: 'middle' }}/> TERMINAL DE COBRO
+                            </Typography>
+                        </Box>
+                        
+                        <CardContent sx={{ p: 2 }}>
+                            <Box display="flex" flexDirection="column" gap={2}>
+                                {/* --- CAMPO DE FECHA NUEVO --- */}
+                                <TextField
+                                    fullWidth
+                                    type="date"
+                                    label="Fecha de Pago"
+                                    name="fecha"
+                                    value={formPago.fecha}
+                                    onChange={handleChange}
+                                    size="small"
+                                    InputLabelProps={{ shrink: true }}
+                                    InputProps={{
+                                        startAdornment: <InputAdornment position="start"><CalendarTodayIcon fontSize="small" /></InputAdornment>,
+                                    }}
+                                    helperText="Puede registrar pagos de días anteriores"
+                                />
+
+                                <TextField 
+                                    select label="Medio de Pago" name="id_medio_ingreso" 
+                                    value={formPago.id_medio_ingreso} onChange={handleChange} size="small" fullWidth
+                                >
+                                    {medios.map(m => <MenuItem key={m.id_medio_ingreso} value={m.id_medio_ingreso}>{m.nombre}</MenuItem>)}
+                                </TextField>
+
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">Monto a Recibir</Typography>
+                                    <TextField 
+                                        fullWidth type="number" name="monto_total" 
+                                        value={formPago.monto_total} onChange={handleChange} 
+                                        InputProps={{ startAdornment: <InputAdornment position="start">Bs</InputAdornment>, style: { fontSize: '1.2rem', fontWeight: 'bold', color: '#2e7d32' } }} 
+                                    />
+                                </Box>
+
+                                <TextField label="Nro. Recibo / Comprobante" name="num_documento" value={formPago.num_documento} onChange={handleChange} size="small" fullWidth />
+                                <TextField label="Nota" name="descripcion" value={formPago.descripcion} onChange={handleChange} size="small" multiline rows={2} fullWidth />
+
+                                <Button 
+                                    fullWidth variant="contained" color="success" size="large" 
+                                    onClick={handlePagar} disabled={!contratoSeleccionado || loading}
+                                    sx={{ mt: 1, py: 1.5, fontWeight: 'bold' }}
+                                >
+                                    {loading ? "..." : "COBRAR"}
+                                </Button>
+                            </Box>
                         </CardContent>
                     </Card>
                 </Grid>
-
-                {/* 3. FILA INFERIOR: HISTORIAL */}
-                <Grid item xs={12}>
-                    <Paper sx={{ p: 3 }}>
-                        <Typography variant="h6" sx={{ mb: 2 }}><HistoryIcon sx={{ mr: 1 }} /> Historial del Día</Typography>
-                        <TableContainer>
-                            <Table size="small">
-                                <TableHead>
-                                    <TableRow sx={{ bgcolor: '#f5f5f5' }}>
-                                        <TableCell />
-                                        <TableCell>ID</TableCell>
-                                        <TableCell>Fecha</TableCell>
-                                        <TableCell>Inquilino</TableCell>
-                                        <TableCell>Unidad</TableCell>
-                                        <TableCell>Monto</TableCell>
-                                        <TableCell>Desc.</TableCell>
-                                        <TableCell>Usuario</TableCell>
-                                        <TableCell align="center">Recibo</TableCell>
-                                        <TableCell align="center">Acción</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {historial.map((h) => <Row key={h.id_transaccion_ingreso || h.id_transaccion} row={h} onImprimir={abrirRecibo} onAnular={handleAnular} />)}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    </Paper>
-                </Grid>
             </Grid>
 
-            {/* MODAL RECIBO */}
+            {/* 4. HISTORIAL */}
+            <Box mt={4}>
+                <Paper sx={{ p: 2 }}>
+                    <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 2, color: '#555' }}>
+                        <HistoryIcon sx={{ fontSize: 18, verticalAlign: '-3px', mr: 0.5 }} /> Últimos Movimientos
+                    </Typography>
+                    <TableContainer>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow sx={{ bgcolor: '#f5f5f5' }}>
+                                    <TableCell width={30}/>
+                                    <TableCell>ID</TableCell>
+                                    <TableCell>Fecha Pago</TableCell> {/* Etiqueta cambiada */}
+                                    <TableCell>Inquilino</TableCell>
+                                    <TableCell>Unidad</TableCell>
+                                    <TableCell>Monto</TableCell>
+                                    <TableCell>Detalle</TableCell>
+                                    <TableCell>Registrado Por</TableCell>
+                                    <TableCell align="center">Acción</TableCell>
+                                    <TableCell align="center">Anular</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {historial.slice(0, 5).map((h) => <Row key={h.id_transaccion_ingreso || h.id_transaccion} row={h} onImprimir={abrirRecibo} onAnular={handleAnular} />)}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Paper>
+            </Box>
+
+            {/* MODALES */}
             <Dialog open={reciboOpen} onClose={() => setReciboOpen(false)} maxWidth="xs" fullWidth>
-                <DialogTitle sx={{ textAlign: 'center', borderBottom: '1px dashed #ccc' }}>🏢 RECIBO DE PAGO</DialogTitle>
+                <DialogTitle sx={{ textAlign: 'center', borderBottom: '1px dashed #ccc' }}>🏢 RECIBO</DialogTitle>
                 <DialogContent sx={{ p: 3 }}>
                     {datoRecibo && (
                         <Box sx={{ mt: 2, textAlign: 'center' }}>
                             <Typography variant="h4" fontWeight="bold">Bs {datoRecibo.monto_total}</Typography>
-                            <Typography variant="body2" color="text.secondary">Nro: {obtenerId(datoRecibo)} | {datoRecibo.fecha}</Typography>
+                            <Typography variant="body2" color="text.secondary">Fecha de Pago: {datoRecibo.fecha}</Typography>
                             <Divider sx={{ my: 2 }} />
-                            <Typography variant="body1">Recibimos de: {datoRecibo.relacion_cliente?.persona?.nombres} {datoRecibo.relacion_cliente?.persona?.apellidos}</Typography>
-                            <Typography variant="caption">{datoRecibo.descripcion}</Typography>
+                            <Typography variant="body1">{datoRecibo.relacion_cliente?.persona?.nombres}</Typography>
                         </Box>
                     )}
                 </DialogContent>
@@ -468,9 +641,79 @@ const AdminCaja = () => {
                 </DialogActions>
             </Dialog>
 
-            <Snackbar open={mensaje.open} autoHideDuration={4000} onClose={() => setMensaje({...mensaje, open: false})}>
-                <Alert severity={mensaje.type}>{mensaje.text}</Alert>
-            </Snackbar>
+            <Dialog open={planOpen} onClose={() => setPlanOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ bgcolor: '#1565c0', color: 'white' }}>
+                    📅 Configurar Plan de Pagos
+                </DialogTitle>
+                <DialogContent sx={{ mt: 2 }}>
+                    <Box sx={{ p: 1 }}>
+                        <Alert severity="info" sx={{ mb: 3 }}>
+                            Estás a punto de refinanciar una deuda total de: <strong>Bs {totalParaPlan.toFixed(2)}</strong>
+                        </Alert>
+
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    label="Cantidad de Cuotas"
+                                    name="numero_cuotas"
+                                    type="number"
+                                    value={planForm.numero_cuotas}
+                                    onChange={handlePlanChange}
+                                    fullWidth
+                                    inputProps={{ min: 2, max: 24 }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    label="Fecha 1ra Cuota"
+                                    name="fecha_inicio"
+                                    type="date"
+                                    value={planForm.fecha_inicio}
+                                    onChange={handlePlanChange}
+                                    fullWidth
+                                    InputLabelProps={{ shrink: true }}
+                                />
+                            </Grid>
+                            
+                            <Grid item xs={12}>
+                                <Paper variant="outlined" sx={{ p: 2, bgcolor: '#f5f5f5', textAlign: 'center' }}>
+                                    <Typography variant="caption" color="text.secondary">CUOTA MENSUAL APROXIMADA</Typography>
+                                    <Typography variant="h4" color="primary" fontWeight="bold">
+                                        Bs {cuotaEstimada}
+                                    </Typography>
+                                </Paper>
+                            </Grid>
+
+                            <Grid item xs={12}>
+                                <TextField
+                                    label="Observaciones / Motivo"
+                                    name="observaciones"
+                                    value={planForm.observaciones}
+                                    onChange={handlePlanChange}
+                                    fullWidth
+                                    multiline
+                                    rows={2}
+                                    placeholder="Ej: Autorizado por el directorio según acta..."
+                                />
+                            </Grid>
+                        </Grid>
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ p: 3 }}>
+                    <Button onClick={() => setPlanOpen(false)} color="inherit">Cancelar</Button>
+                    <Button 
+                        onClick={handleCrearPlan} 
+                        variant="contained" 
+                        color="primary"
+                        disabled={loading || planForm.numero_cuotas < 2}
+                    >
+                        {loading ? "Creando..." : "Confirmar Plan"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <ModalTransferencia open={transferenciaOpen} onClose={() => setTransferenciaOpen(false)} onSuccess={() => setMensaje({ open: true, text: "Transferencia Exitosa", type: "success" })} />
+            <Snackbar open={mensaje.open} autoHideDuration={4000} onClose={() => setMensaje({...mensaje, open: false})}><Alert severity={mensaje.type}>{mensaje.text}</Alert></Snackbar>
         </Container>
     );
 };

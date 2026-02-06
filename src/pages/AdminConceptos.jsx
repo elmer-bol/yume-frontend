@@ -1,218 +1,290 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-    Container, Typography, Button, Table, TableBody, TableCell, 
-    TableContainer, TableHead, TableRow, Paper, Dialog, 
-    DialogTitle, DialogContent, DialogActions, TextField, Grid, 
-    Chip, IconButton, FormControlLabel, Switch, Tooltip,
-    DialogContentText
+    Container, Grid, Paper, Typography, TextField, Button, 
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
+    IconButton, Switch, FormControlLabel, Chip, Alert, Snackbar, MenuItem,
+    InputAdornment
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import RequestQuoteIcon from '@mui/icons-material/RequestQuote'; // Icono de Cobro/Concepto
+
+import SaveIcon from '@mui/icons-material/Save';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import CategoryIcon from '@mui/icons-material/Category';
+import MonetizationOnIcon from '@mui/icons-material/MonetizationOn'; // Icono de Ingreso
+
 import { conceptosService } from '../services/conceptosService';
+import { categoriasService } from '../services/categoriasService'; // <--- USAMOS EL SERVICIO DEL CATÁLOGO
 
 const AdminConceptos = () => {
-    // --- ESTADOS ---
-    const [conceptos, setConceptos] = useState([]);
+    const [lista, setLista] = useState([]);
+    const [cuentasIngreso, setCuentasIngreso] = useState([]); // Lista de cuentas 4.x.x
+    const [loading, setLoading] = useState(false);
     
-    const [openModal, setOpenModal] = useState(false);
-    const [modoEdicion, setModoEdicion] = useState(false);
-    const [idEdicion, setIdEdicion] = useState(null);
-
-    // Estado para Borrado Seguro
-    const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
-    const [conceptoAEliminar, setConceptoAEliminar] = useState(null);
-
-    // Formulario (Mapeado a tu Modelo Python)
-    const [formulario, setFormulario] = useState({
+    // Estado del formulario
+    const [form, setForm] = useState({
+        id_concepto: null,
         nombre: '',
         descripcion: '',
+        id_catalogo: '', // <--- CAMPO OBLIGATORIO
         activo: true
     });
 
-    // --- LOGICA ---
-    const cargarConceptos = async () => {
+    const [mensaje, setMensaje] = useState({ open: false, text: '', type: 'success' });
+    const [modoEdicion, setModoEdicion] = useState(false);
+
+    useEffect(() => {
+        cargarDatos();
+    }, []);
+
+    const cargarDatos = async () => {
         try {
-            const data = await conceptosService.obtenerTodos();
-            setConceptos(data);
+            // Cargar Conceptos y Catálogo en paralelo
+            const [dataConceptos, dataCuentas] = await Promise.all([
+                conceptosService.obtenerTodos(),
+                categoriasService.obtenerTodas()
+            ]);
+
+            // --- FILTRO CONTABLE CLAVE ---
+            // Buscamos cuentas de INGRESO (Grupo 4)
+            const soloIngresos = dataCuentas.filter(c => 
+                c.tipo === 'INGRESO' || c.tipo === 'Ingreso' || c.codigo.startsWith('4.')
+            );
+            
+            // Ordenamos por código para que se vea ordenado en el dropdown
+            soloIngresos.sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }));
+
+            setLista(dataConceptos);
+            setCuentasIngreso(soloIngresos); 
+
         } catch (error) {
-            console.error("Error cargando conceptos", error);
+            console.error("Error cargando:", error);
+            mostrarMensaje("Error al cargar datos", "error");
         }
     };
 
-    useEffect(() => { cargarConceptos(); }, []);
-
     const handleChange = (e) => {
         const { name, value, checked, type } = e.target;
-        setFormulario({ 
-            ...formulario, 
-            [name]: type === 'checkbox' ? checked : value 
+        setForm({
+            ...form,
+            [name]: type === 'checkbox' ? checked : value
         });
     };
 
     const handleGuardar = async () => {
+        // VALIDACIÓN
+        if (!form.nombre.trim()) return mostrarMensaje("El nombre es obligatorio", "warning");
+        if (!form.id_catalogo) return mostrarMensaje("⚠️ Debe asociar una Cuenta Contable de Ingreso", "warning");
+
+        setLoading(true);
         try {
             if (modoEdicion) {
-                await conceptosService.actualizar(idEdicion, formulario);
+                await conceptosService.actualizar(form.id_concepto, form);
+                mostrarMensaje("Concepto actualizado correctamente", "success");
             } else {
-                await conceptosService.crear(formulario);
+                await conceptosService.crear(form);
+                mostrarMensaje("Concepto creado correctamente", "success");
             }
-            setOpenModal(false);
-            cargarConceptos();
+            limpiarForm();
+            cargarDatos();
         } catch (error) {
-            alert("Error al guardar. Verifica que el nombre no esté duplicado.");
+            console.error(error);
+            // Mostrar mensaje del backend si existe
+            const msg = error.response?.data?.detail || "Error al guardar. Verifique si el nombre ya existe.";
+            mostrarMensaje(msg, "error");
+        } finally {
+            setLoading(false);
         }
     };
 
-    const handleAbrirEditar = (row) => {
-        setModoEdicion(true);
-        // CLAVE: Usamos id_concepto
-        setIdEdicion(row.id_concepto); 
-        
-        setFormulario({
-            nombre: row.nombre,
-            descripcion: row.descripcion || '', // Manejo de nulos
-            activo: row.activo
+    const handleEditar = (item) => {
+        setForm({
+            id_concepto: item.id_concepto,
+            nombre: item.nombre,
+            descripcion: item.descripcion || '',
+            id_catalogo: item.id_catalogo || '', // Cargar el valor guardado
+            activo: item.activo
         });
-        setOpenModal(true);
+        setModoEdicion(true);
     };
 
-    // --- BORRADO SEGURO ---
-    const handleClickEliminar = (row) => {
-        setConceptoAEliminar(row);
-        setOpenDeleteDialog(true);
-    };
-
-    const confirmarEliminacion = async () => {
+    const handleEliminar = async (id) => {
+        if (!window.confirm("¿Desactivar este concepto?")) return;
         try {
-            if (conceptoAEliminar) {
-                // CLAVE: Usamos id_concepto
-                await conceptosService.eliminar(conceptoAEliminar.id_concepto);
-                cargarConceptos();
-            }
-            setOpenDeleteDialog(false);
-            setConceptoAEliminar(null);
+            await conceptosService.eliminar(id);
+            mostrarMensaje("Concepto desactivado", "info");
+            cargarDatos();
         } catch (error) {
-            alert("No se pudo eliminar. Probablemente ya se ha facturado este concepto.");
-            setOpenDeleteDialog(false);
+            mostrarMensaje("No se pudo desactivar", "error");
         }
     };
+
+    const limpiarForm = () => {
+        setForm({ id_concepto: null, nombre: '', descripcion: '', id_catalogo: '', activo: true });
+        setModoEdicion(false);
+    };
+
+    const mostrarMensaje = (text, type) => setMensaje({ open: true, text, type });
 
     return (
-        <Container maxWidth="md" sx={{ mt: 2 }}>
-            {/* CABECERA */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center' }}>
-                    <RequestQuoteIcon sx={{ mr: 1 }} /> Conceptos de Cobro
-                </Typography>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={() => {
-                    setModoEdicion(false);
-                    setFormulario({ nombre: '', descripcion: '', activo: true });
-                    setOpenModal(true);
-                }}>
-                    Nuevo Concepto
-                </Button>
-            </div>
+        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+            <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+                Conceptos de Cobro
+            </Typography>
 
-            {/* TABLA */}
-            <TableContainer component={Paper}>
-                <Table>
-                    <TableHead sx={{ backgroundColor: '#f5f5f5' }}>
-                        <TableRow>
-                            <TableCell><strong>Nombre (Concepto)</strong></TableCell>
-                            <TableCell><strong>Descripción</strong></TableCell>
-                            <TableCell align="center"><strong>Estado</strong></TableCell>
-                            <TableCell align="center"><strong>Acciones</strong></TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {conceptos.map((row) => (
-                            <TableRow key={row.id_concepto} hover>
-                                <TableCell sx={{ fontWeight: 'bold' }}>{row.nombre}</TableCell>
-                                <TableCell>{row.descripcion}</TableCell>
-                                <TableCell align="center">
-                                    <Chip 
-                                        label={row.activo ? "Activo" : "Inactivo"} 
-                                        color={row.activo ? "success" : "default"} 
-                                        size="small" 
-                                    />
-                                </TableCell>
-                                <TableCell align="center">
-                                    <Tooltip title="Editar">
-                                        <IconButton color="primary" onClick={() => handleAbrirEditar(row)}>
-                                            <EditIcon />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Eliminar / Desactivar">
-                                        <IconButton color="error" onClick={() => handleClickEliminar(row)}>
-                                            <DeleteIcon />
-                                        </IconButton>
-                                    </Tooltip>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </TableContainer>
+            <Grid container spacing={3}>
+                {/* FORMULARIO */}
+                <Grid item xs={12} md={4}>
+                    <Paper sx={{ p: 3, bgcolor: '#f5faff' }}>
+                        <Typography variant="h6" gutterBottom color="primary" sx={{ display: 'flex', alignItems: 'center' }}>
+                            <CategoryIcon sx={{ mr: 1 }} />
+                            {modoEdicion ? "Editar Concepto" : "Nuevo Concepto"}
+                        </Typography>
+                        
+                        <Grid container spacing={2}>
+                            <Grid item xs={12}>
+                                <TextField
+                                    fullWidth
+                                    label="Nombre del Concepto"
+                                    name="nombre"
+                                    value={form.nombre}
+                                    onChange={handleChange}
+                                    placeholder="Ej: Expensas, Multas"
+                                    autoFocus
+                                />
+                            </Grid>
+                            
+                            {/* --- SELECTOR DE CUENTA CONTABLE (INGRESO) --- */}
+                            <Grid item xs={12}>
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Cuenta Contable (Ingreso)"
+                                    name="id_catalogo"
+                                    value={form.id_catalogo}
+                                    onChange={handleChange}
+                                    helperText="¿A qué cuenta contable suma este cobro?"
+                                    InputProps={{
+                                        startAdornment: <MonetizationOnIcon color="action" sx={{ mr: 1 }} />,
+                                    }}
+                                >
+                                    {cuentasIngreso.length > 0 ? (
+                                        cuentasIngreso.map((c) => (
+                                            <MenuItem key={c.id_catalogo} value={c.id_catalogo}>
+                                                <strong>{c.codigo}</strong> - {c.nombre_cuenta}
+                                            </MenuItem>
+                                        ))
+                                    ) : (
+                                        <MenuItem disabled>No hay cuentas de Ingreso (Grupo 4)</MenuItem>
+                                    )}
+                                </TextField>
+                            </Grid>
 
-            {/* MODAL FORMULARIO */}
-            <Dialog open={openModal} onClose={() => setOpenModal(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>{modoEdicion ? 'Editar Concepto' : 'Nuevo Concepto de Cobro'}</DialogTitle>
-                <DialogContent>
-                    <Grid container spacing={2} sx={{ mt: 1 }}>
-                        <Grid item xs={12}>
-                            <TextField 
-                                label="Nombre (Ej: Renta Mensual, Multa)" 
-                                name="nombre" 
-                                fullWidth required autoFocus
-                                value={formulario.nombre} 
-                                onChange={handleChange} 
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <TextField 
-                                label="Descripción Detallada (Para el recibo)" 
-                                name="descripcion" 
-                                fullWidth multiline rows={2}
-                                value={formulario.descripcion} 
-                                onChange={handleChange} 
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <FormControlLabel
-                                control={
-                                    <Switch 
-                                        checked={formulario.activo} 
-                                        onChange={handleChange} 
-                                        name="activo" 
-                                        color="success"
-                                    />
-                                }
-                                label="Concepto Activo (Disponible para facturar)"
-                            />
-                        </Grid>
-                    </Grid>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpenModal(false)} color="secondary">Cancelar</Button>
-                    <Button onClick={handleGuardar} variant="contained" color="primary">Guardar</Button>
-                </DialogActions>
-            </Dialog>
+                            <Grid item xs={12}>
+                                <TextField
+                                    fullWidth
+                                    multiline
+                                    rows={2}
+                                    label="Descripción"
+                                    name="descripcion"
+                                    value={form.descripcion}
+                                    onChange={handleChange}
+                                />
+                            </Grid>
 
-            {/* DIALOGO DE CONFIRMACIÓN */}
-            <Dialog open={openDeleteDialog} onClose={() => setOpenDeleteDialog(false)}>
-                <DialogTitle>¿Confirmar acción?</DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
-                        ¿Deseas desactivar el concepto <strong>{conceptoAEliminar?.nombre}</strong>?                        
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpenDeleteDialog(false)} color="primary">Cancelar</Button>
-                    <Button onClick={confirmarEliminacion} color="error" variant="contained">Sí, Desactivar</Button>
-                </DialogActions>
-            </Dialog>
+                            <Grid item xs={12}>
+                                <FormControlLabel
+                                    control={<Switch checked={form.activo} onChange={handleChange} name="activo" color="primary" />}
+                                    label={form.activo ? "Activo" : "Inactivo"}
+                                />
+                            </Grid>
+
+                            <Grid item xs={12} sx={{ display: 'flex', gap: 1 }}>
+                                <Button 
+                                    fullWidth 
+                                    variant="contained" 
+                                    startIcon={<SaveIcon />}
+                                    onClick={handleGuardar}
+                                    disabled={loading}
+                                >
+                                    {loading ? "Guardando..." : "Guardar"}
+                                </Button>
+                                {modoEdicion && (
+                                    <Button variant="outlined" color="secondary" onClick={limpiarForm}>
+                                        Cancelar
+                                    </Button>
+                                )}
+                            </Grid>
+                        </Grid>
+                    </Paper>
+                </Grid>
+
+                {/* LISTA */}
+                <Grid item xs={12} md={8}>
+                    <Paper sx={{ p: 2 }}>
+                        <TableContainer>
+                            <Table size="small">
+                                <TableHead>
+                                    <TableRow sx={{ bgcolor: '#eeeeee' }}>
+                                        <TableCell>Nombre</TableCell>
+                                        <TableCell>Cuenta Contable</TableCell>
+                                        <TableCell>Estado</TableCell>
+                                        <TableCell align="center">Acciones</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {lista.map((item) => (
+                                        <TableRow key={item.id_concepto}>
+                                            <TableCell>
+                                                <Typography fontWeight="bold">{item.nombre}</Typography>
+                                                <Typography variant="caption" color="textSecondary">{item.descripcion}</Typography>
+                                            </TableCell>
+                                            <TableCell>
+                                                {item.nombre_cuenta ? (
+                                                    <Chip 
+                                                        icon={<MonetizationOnIcon />}
+                                                        label={item.nombre_cuenta} 
+                                                        size="small" 
+                                                        variant="outlined" 
+                                                        color="success"
+                                                    />
+                                                ) : (
+                                                    <Chip label="Sin Asignar" size="small" color="warning"/>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Chip 
+                                                    label={item.activo ? "Activo" : "Inactivo"} 
+                                                    color={item.activo ? "success" : "default"} 
+                                                    size="small" 
+                                                />
+                                            </TableCell>
+                                            <TableCell align="center">
+                                                <IconButton color="primary" size="small" onClick={() => handleEditar(item)}>
+                                                    <EditIcon />
+                                                </IconButton>
+                                                <IconButton color="error" size="small" onClick={() => handleEliminar(item.id_concepto)}>
+                                                    <DeleteIcon />
+                                                </IconButton>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                    {lista.length === 0 && (
+                                        <TableRow>
+                                            <TableCell colSpan={4} align="center">No hay conceptos registrados.</TableCell>
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    </Paper>
+                </Grid>
+            </Grid>
+
+            <Snackbar open={mensaje.open} autoHideDuration={4000} onClose={() => setMensaje({ ...mensaje, open: false })}>
+                <Alert severity={mensaje.type} sx={{ width: '100%' }}>
+                    {mensaje.text}
+                </Alert>
+            </Snackbar>
         </Container>
     );
 };

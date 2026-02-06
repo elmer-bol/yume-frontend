@@ -20,7 +20,7 @@ export const conceptosService = {
     },
 
     actualizar: async (id, datos) => {
-        const response = await api.put(`/conceptos/${id}`, datos);
+        const response = await api.patch(`/conceptos/${id}`, datos);
         return response.data;
     },
     

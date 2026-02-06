@@ -4,7 +4,7 @@ import {
     TableCell, TableContainer, TableHead, TableRow, 
     Chip, CircularProgress, Alert, Box, TextField, 
     InputAdornment, IconButton, Collapse, Grid, Button,
-    MenuItem, Select, FormControl, InputLabel
+    MenuItem, Select, FormControl, InputLabel, Tooltip
 } from '@mui/material';
 
 // Iconos
@@ -15,71 +15,124 @@ import PrintIcon from '@mui/icons-material/Print';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 
 import { reportesService } from '../services/reportesService';
 
-// --- ESTILOS IMPRESIÓN ---
+// --- ESTILOS DE IMPRESIÓN "MODO COMPACTO PRO" ---
 const printStyles = `
   @media print {
+    /* 1. Ocultamos todo lo ajeno */
+    body * { visibility: hidden; }
+    .print-container, .print-container * { visibility: visible; }
     .no-print { display: none !important; }
-    .print-container { width: 100% !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; }
-    body { background-color: white; }
-    @page { margin: 1cm; size: landscape; }
+
+    /* 2. Posicionamiento */
+    .print-container {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 10px !important;
+    }
+
+    /* 3. AHORRO DE TINTA */
+    * {
+      color: black !important;
+      background-color: transparent !important;
+      box-shadow: none !important;
+      border-color: #ccc !important;
+    }
+
+    /* 4. FUENTE MÁS PEQUEÑA Y COMPACTA */
+    .MuiTableCell-root {
+      padding: 3px 6px !important;
+      font-size: 9pt !important;
+      line-height: 1.2 !important;
+    }
+    
+    /* Títulos */
+    h4, h5 { font-size: 14pt !important; margin: 0 0 5px 0 !important; }
+    h6 { font-size: 11pt !important; }
+    
+    /* 5. EXPANDIR SIEMPRE LOS DETALLES */
+    .MuiCollapse-root {
+      display: block !important;
+      height: auto !important;
+      visibility: visible !important;
+    }
+    
+    /* Evitar cortes feos de página */
+    tr { page-break-inside: avoid; }
+    
+    /* Forzar ancho completo */
+    table { width: 100% !important; }
   }
 `;
 
 // --- FILA CON DETALLE EXPANDIBLE ---
-const RowMoroso = ({ row }) => {
-    const [open, setOpen] = useState(false);
-
+const RowMoroso = ({ row, isOpen, onToggle }) => {
     return (
         <React.Fragment>
-            <TableRow sx={{ '& > *': { borderBottom: 'unset' }, backgroundColor: open ? '#f8fafc' : 'inherit' }}>
-                <TableCell>
-                    <IconButton size="small" onClick={() => setOpen(!open)}>
-                        {open ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+            <TableRow sx={{ '& > *': { borderBottom: 'unset' }, backgroundColor: isOpen ? '#f8fafc' : 'inherit' }}>
+                <TableCell className="no-print" width="40px">
+                    <IconButton size="small" onClick={() => onToggle(row.identificador_unico)}>
+                        {isOpen ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
                     </IconButton>
                 </TableCell>
-                <TableCell component="th" scope="row" sx={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
+                
+                {/* Celda fantasma para impresión */}
+                <TableCell sx={{ display: 'none', '@media print': { display: 'table-cell', width: '10px' } }}></TableCell>
+
+                <TableCell component="th" scope="row" sx={{ fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'nowrap' }}>
                     {row.identificador_unico}
                 </TableCell>
+                
                 <TableCell>{row.nombre_inquilino}</TableCell>
+                
                 <TableCell align="center">
-                    <Chip label={`${row.cantidad_meses} Meses`} color={row.cantidad_meses > 3 ? "error" : "warning"} variant="outlined" size="small" />
+                    <Chip 
+                        label={`${row.cantidad_meses} Meses`} 
+                        color={row.cantidad_meses > 3 ? "error" : "warning"} 
+                        variant="outlined" 
+                        size="small" 
+                    />
                 </TableCell>
-                <TableCell align="right" sx={{ color: '#ef4444', fontWeight: 'bold', fontSize: '1rem' }}>
+                
+                <TableCell align="right" sx={{ color: '#ef4444', fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'nowrap' }}>
                     {row.total_deuda.toLocaleString('es-BO', { minimumFractionDigits: 2 })} Bs
                 </TableCell>
             </TableRow>
+            
             <TableRow>
                 <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
-                    <Collapse in={open} timeout="auto" unmountOnExit>
-                        <Box sx={{ margin: 2, backgroundColor: '#fff', p: 2, borderRadius: 2, border: '1px solid #e2e8f0' }}>
-                            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', color: '#64748b' }}>
-                                🧾 Detalle de Deuda
+                    <Collapse in={isOpen} timeout="auto" unmountOnExit className="print-always-visible">
+                        <Box sx={{ margin: 2, p: 1, borderRadius: 1, border: '1px solid #e2e8f0', '@media print': { margin: '2px 0 10px 20px', border: 'none', borderLeft: '1px solid #999', paddingLeft: '10px' } }}>
+                            <Typography variant="caption" sx={{ fontWeight: 'bold', color: '#64748b', display: 'block', mb: 0.5 }}>
+                                DETALLE:
                             </Typography>
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell>Periodo</TableCell>
-                                        <TableCell sx={{ color: '#2563eb', fontWeight: 'bold' }}>Concepto</TableCell> {/* COLUMNA NUEVA */}
-                                        <TableCell>Días Atraso</TableCell>
-                                        <TableCell align="right">Monto</TableCell>
+                                        <TableCell width="15%">Periodo</TableCell>
+                                        <TableCell>Concepto</TableCell>
+                                        <TableCell width="15%">Atraso</TableCell>
+                                        <TableCell align="right" width="20%">Monto</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
                                     {row.detalles.map((detalle, index) => (
                                         <TableRow key={index}>
-                                            <TableCell>{detalle.periodo}</TableCell>
-                                            <TableCell sx={{ color: '#2563eb' }}>{detalle.concepto}</TableCell> {/* DATO NUEVO */}
-                                            <TableCell>{detalle.dias_atraso} días</TableCell>
-                                            <TableCell align="right">{detalle.monto_pendiente.toFixed(2)} Bs</TableCell>
+                                            <TableCell sx={{ whiteSpace: 'nowrap' }}>{detalle.periodo}</TableCell>
+                                            <TableCell>{detalle.concepto}</TableCell>
+                                            <TableCell sx={{ whiteSpace: 'nowrap' }}>{detalle.dias_atraso} días</TableCell>
+                                            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                                                {detalle.monto_pendiente.toFixed(2)}
+                                            </TableCell>
                                         </TableRow>
                                     ))}
-                                    <TableRow>
-                                        <TableCell colSpan={3} align="right" sx={{ fontWeight: 'bold' }}>Total:</TableCell>
-                                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>{row.total_deuda.toFixed(2)} Bs</TableCell>
-                                    </TableRow>
                                 </TableBody>
                             </Table>
                         </Box>
@@ -99,13 +152,16 @@ const ReporteMorosidad = () => {
     // Filtros
     const [busqueda, setBusqueda] = useState("");
     const [conceptoFiltro, setConceptoFiltro] = useState("TODOS");
+    
+    const [expandedIds, setExpandedIds] = useState(new Set());
 
     useEffect(() => {
         const fetchDatos = async () => {
             try {
-                const data = await reportesService.obtenerMorosos();
+                const data = await reportesService.obtenerMorosidad(); 
                 setMorosos(data);
             } catch (err) {
+                console.error(err);
                 setError("Error cargando reporte. Verifique su conexión.");
             } finally {
                 setLoading(false);
@@ -114,7 +170,6 @@ const ReporteMorosidad = () => {
         fetchDatos();
     }, []);
 
-    // 1. EXTRAER LISTA ÚNICA DE CONCEPTOS PARA EL FILTRO
     const listaConceptos = useMemo(() => {
         const conceptosSet = new Set();
         morosos.forEach(m => {
@@ -123,11 +178,9 @@ const ReporteMorosidad = () => {
         return ["TODOS", ...Array.from(conceptosSet)];
     }, [morosos]);
 
-    // 2. LÓGICA DE FILTRADO MAESTRA
     const datosProcesados = useMemo(() => {
-        let data = morosos;
+        let data = [...morosos];
 
-        // A. Filtro por Texto (Depto o Nombre)
         if (busqueda) {
             const lowerBusqueda = busqueda.toLowerCase();
             data = data.filter(m => 
@@ -136,25 +189,25 @@ const ReporteMorosidad = () => {
             );
         }
 
-        // B. Filtro por Concepto (RECALCULA TOTALES)
         if (conceptoFiltro !== "TODOS") {
             data = data.map(unidad => {
-                // Filtramos solo los detalles que coincidan con el concepto seleccionado
-                const detallesFiltrados = unidad.detalles.filter(d => d.concepto === conceptoFiltro);
-                
-                // Si no tiene deudas de este concepto, devolvemos null (para filtrarlo después)
-                if (detallesFiltrados.length === 0) return null;
-
-                // Recalculamos la deuda total de la unidad basándonos SOLO en el concepto filtrado
-                const nuevaDeuda = detallesFiltrados.reduce((acc, d) => acc + d.monto_pendiente, 0);
+                let detalles = unidad.detalles.filter(d => d.concepto === conceptoFiltro);
+                if (detalles.length === 0) return null;
+                const detallesOrdenados = [...detalles].sort((a, b) => a.periodo.localeCompare(b.periodo));
+                const nuevaDeuda = detallesOrdenados.reduce((acc, d) => acc + d.monto_pendiente, 0);
 
                 return {
                     ...unidad,
-                    detalles: detallesFiltrados,
+                    detalles: detallesOrdenados,
                     total_deuda: nuevaDeuda,
-                    cantidad_meses: detallesFiltrados.length // Actualizamos contador de meses
+                    cantidad_meses: detallesOrdenados.length
                 };
-            }).filter(item => item !== null); // Eliminamos los que quedaron vacíos
+            }).filter(item => item !== null);
+        } else {
+             data = data.map(unidad => ({
+                 ...unidad,
+                 detalles: [...unidad.detalles].sort((a, b) => a.periodo.localeCompare(b.periodo))
+             }));
         }
 
         return data;
@@ -162,7 +215,29 @@ const ReporteMorosidad = () => {
 
     const totalDeudaGeneral = datosProcesados.reduce((acc, curr) => acc + curr.total_deuda, 0);
 
-    const handlePrint = () => window.print();
+    const handleToggleRow = (id) => {
+        const newSet = new Set(expandedIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setExpandedIds(newSet);
+    };
+
+    const handleToggleAll = () => {
+        if (expandedIds.size === datosProcesados.length && datosProcesados.length > 0) {
+            setExpandedIds(new Set());
+        } else {
+            const allIds = datosProcesados.map(d => d.identificador_unico);
+            setExpandedIds(new Set(allIds));
+        }
+    };
+
+    // --- ¡AQUÍ ESTABA LA LÍNEA FALTANTE! ---
+    const allExpanded = datosProcesados.length > 0 && expandedIds.size === datosProcesados.length;
+    // ----------------------------------------
+
+    const handlePrint = () => {
+        window.print();
+    };
 
     if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 5 }}><CircularProgress /></Box>;
     if (error) return <Container sx={{ mt: 5 }}><Alert severity="error">{error}</Alert></Container>;
@@ -176,7 +251,6 @@ const ReporteMorosidad = () => {
                     📉 Reporte de Morosidad
                 </Typography>
 
-                {/* TARJETAS DE TOTALES */}
                 <Grid container spacing={3} sx={{ mb: 3 }}>
                     <Grid item xs={12} md={6}>
                         <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', bgcolor: '#fef2f2', border: '1px solid #fecaca' }}>
@@ -204,22 +278,17 @@ const ReporteMorosidad = () => {
                     </Grid>
                 </Grid>
 
-                {/* BARRA DE FILTROS */}
                 <Paper sx={{ p: 2, mb: 3, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                    
-                    {/* 1. Buscador Texto */}
-                    <TextField
-                        size="small"
-                        label="Buscar Unidad o Nombre"
-                        value={busqueda}
+                    <TextField 
+                        size="small" 
+                        label="Buscar Unidad o Nombre" 
+                        value={busqueda} 
                         onChange={(e) => setBusqueda(e.target.value)}
                         sx={{ flexGrow: 1, minWidth: '200px' }}
                         InputProps={{
                             startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment>,
                         }}
                     />
-
-                    {/* 2. Filtro Concepto (NUEVO) */}
                     <FormControl size="small" sx={{ minWidth: 200 }}>
                         <InputLabel>Filtrar por Concepto</InputLabel>
                         <Select
@@ -235,7 +304,6 @@ const ReporteMorosidad = () => {
                             ))}
                         </Select>
                     </FormControl>
-
                     <Button 
                         variant="contained" 
                         startIcon={<PrintIcon />} 
@@ -247,35 +315,55 @@ const ReporteMorosidad = () => {
                 </Paper>
             </Box>
 
-            {/* TABLA DE RESULTADOS */}
-            <Paper elevation={3} sx={{ p: 2 }}>
-                {/* Encabezado visible solo al imprimir */}
-                <Box sx={{ display: 'none', '@media print': { display: 'block', mb: 2 } }}>
-                    <Typography variant="h5" align="center" sx={{ fontWeight: 'bold' }}>
-                        REPORTE DE MOROSIDAD - {conceptoFiltro === "TODOS" ? "GENERAL" : conceptoFiltro.toUpperCase()}
+            <Paper elevation={3} sx={{ p: 2, boxShadow: 'none', border: '1px solid #e2e8f0' }}>
+                
+                <Box sx={{ display: 'none', '@media print': { display: 'block', mb: 1, textAlign: 'center', borderBottom: '1px solid black', pb: 1 } }}>
+                    <Typography variant="h5" sx={{ fontWeight: 'bold' }}>REPORTE DE MOROSIDAD</Typography>
+                    <Typography variant="subtitle2">
+                        FILTRO: {conceptoFiltro === "TODOS" ? "GENERAL" : conceptoFiltro.toUpperCase()} | 
+                        FECHA: {new Date().toLocaleDateString()}
                     </Typography>
-                    <Typography variant="subtitle1" align="center">
-                        Fecha: {new Date().toLocaleDateString()}
-                    </Typography>
+                    <Grid container sx={{ mt: 1, pt: 0 }}>
+                        <Grid item xs={6} textAlign="left">
+                            <strong>TOTAL DEUDA: {totalDeudaGeneral.toLocaleString('es-BO', { minimumFractionDigits: 2 })} Bs</strong>
+                        </Grid>
+                        <Grid item xs={6} textAlign="right">
+                            <strong>UNIDADES EN MORA: {datosProcesados.length}</strong>
+                        </Grid>
+                    </Grid>
                 </Box>
 
                 {datosProcesados.length === 0 ? (
                     <Alert severity="success">No se encontraron deudas con los filtros seleccionados.</Alert>
                 ) : (
                     <TableContainer>
-                        <Table aria-label="tabla morosos">
+                        <Table aria-label="tabla morosos" size="small">
                             <TableHead sx={{ backgroundColor: '#f1f5f9' }}>
                                 <TableRow>
-                                    <TableCell width="50px" />
+                                    <TableCell width="40px" className="no-print">
+                                        <Tooltip title={allExpanded ? "Contraer Todos" : "Expandir Todos"}>
+                                            <IconButton size="small" onClick={handleToggleAll} color="primary">
+                                                {allExpanded ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                            </IconButton>
+                                        </Tooltip>
+                                    </TableCell>
+                                    
+                                    <TableCell width="10px" sx={{ display: 'none', '@media print': { display: 'table-cell' } }}></TableCell>
+
                                     <TableCell><strong>Unidad</strong></TableCell>
                                     <TableCell><strong>Inquilino / Propietario</strong></TableCell>
-                                    <TableCell align="center"><strong>Cant. Cuotas</strong></TableCell>
+                                    <TableCell align="center"><strong>Meses</strong></TableCell>
                                     <TableCell align="right"><strong>Deuda Total</strong></TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
                                 {datosProcesados.map((row) => (
-                                    <RowMoroso key={row.identificador_unico} row={row} />
+                                    <RowMoroso 
+                                        key={row.identificador_unico} 
+                                        row={row} 
+                                        isOpen={expandedIds.has(row.identificador_unico)}
+                                        onToggle={handleToggleRow}
+                                    />
                                 ))}
                             </TableBody>
                         </Table>

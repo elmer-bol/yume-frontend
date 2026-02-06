@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; // Asegúrate de importar Navigate
 import { ThemeProvider } from '@mui/material/styles';
 
 // Servicios de Seguridad
@@ -9,10 +9,10 @@ import authService from './services/authService';
 import theme from './theme';
 import Layout from './components/Layout';
 
-// Importamos la NUEVA página de Login
+// Importamos la página de Login
 import Login from './pages/Login';
 
-// Importamos tus páginas (Mismos nombres)
+// Importamos tus páginas
 import Dashboard from './pages/Dashboard';
 import AdminPersonas from './pages/AdminPersonas';
 import AdminMedios from './pages/AdminMedios';
@@ -26,16 +26,17 @@ import AdminDepositos from './pages/AdminDepositos';
 import AdminTipoEgresos from './pages/AdminTipoEgresos';
 import AdminEgresos from './pages/AdminEgresos';
 
-import ReporteMorosidad from './pages/ReporteMorosidad';       // <--- NUEVO
-import ReporteEstadoCuenta from './pages/ReporteEstadoCuenta'; // <--- NUEVO
+import ReporteMorosidad from './pages/ReporteMorosidad';
+import ReporteEstadoCuenta from './pages/ReporteEstadoCuenta';
+import ReporteCarteraGlobal from './pages/ReporteCarteraGlobal';
+import ReporteDirectorio from './pages/ReporteDirectorio';
+import ReporteCaja from './pages/ReporteCaja';
 
 // --- COMPONENTE GUARDIÁN ---
-// Si hay token, muestra el contenido (children). Si no, manda al Login.
 const ProtectedRoute = ({ children }) => {
-  const isAuth = authService.isAuthenticated(); // Usamos la función que creamos en authService.js
+  const isAuth = authService.isAuthenticated();
   
   if (!isAuth) {
-    // replace evita que el usuario pueda volver atrás con el botón del navegador
     return <Navigate to="/login" replace />;
   }
   return children;
@@ -46,19 +47,23 @@ function App() {
     <ThemeProvider theme={theme}>
       <Router>
         <Routes>
-          {/* 1. RUTA PÚBLICA: LOGIN (Sin Layout, Sin Protección) */}
+          {/* 1. RUTA PÚBLICA: LOGIN */}
           <Route path="/login" element={<Login />} />
 
-          {/* 2. RUTAS PROTEGIDAS (Todas agrupadas) */}
-          {/* Usamos "/*" para que coincida con cualquier ruta que no sea /login */}
+          {/* 2. RUTAS PROTEGIDAS */}
           <Route 
             path="/*" 
             element={
               <ProtectedRoute>
-                {/* El Layout solo aparece si estás logueado */}
                 <Layout>
                   <Routes>
-                    <Route path="/" element={<Dashboard />} />
+                    {/* --- CORRECCIÓN AQUÍ --- */}
+                    {/* A. Si entran a la raíz "/", redirigir a "/dashboard" */}
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                    
+                    {/* B. Definir explícitamente la ruta "/dashboard" */}
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    {/* ----------------------- */}
 
                     {/* GRUPO: ADMINISTRACIÓN */}
                     <Route path="/admin/personas" element={<AdminPersonas />} />
@@ -67,8 +72,13 @@ function App() {
                     <Route path="/admin/medios" element={<AdminMedios />} />
                     <Route path="/admin/conceptos" element={<AdminConceptos />} />
                     <Route path="/admin/tipoegresos" element={<AdminTipoEgresos />} />
+                    
+                    {/* REPORTES */}
                     <Route path="/reportes/morosidad" element={<ReporteMorosidad />} />
                     <Route path="/reportes/estado-cuenta" element={<ReporteEstadoCuenta />} />
+                    <Route path="/reportes/cartera" element={<ReporteCarteraGlobal />} />
+                    <Route path="/reportes/directorio" element={<ReporteDirectorio />} />
+                    <Route path="/reportes/caja" element={<ReporteCaja />} />
 
                     {/* GRUPO: PROCESOS */}
                     <Route path="/admin/contratos" element={<AdminContratos />} />

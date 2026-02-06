@@ -1,7 +1,9 @@
 import api from '../api/axiosConfig';
 
 export const egresosService = {
-    // ... (Métodos listar, crear, anular se mantienen igual) ...
+    // ----------------------------------------------------------------
+    // CRUD BÁSICO
+    // ----------------------------------------------------------------
     obtenerTodos: async () => {
         const response = await api.get('/egresos/?skip=0&limit=100');
         return response.data;
@@ -15,36 +17,47 @@ export const egresosService = {
         return response.data;
     },
 
-    // --- AQUÍ ESTÁ LA CORRECCIÓN CLAVE ---
+    // ----------------------------------------------------------------
+    // FUNCIONES AUXILIARES (Listas Desplegables)
+    // ----------------------------------------------------------------
 
-    // 1. Cuentas Contables (Filtradas por Tipo: 'Egreso')
+    // 1. Cuentas Contables (Solo Cuentas finales de GASTO)
     obtenerCuentasGasto: async () => {
         try {
-            const response = await api.get('/categorias/?limit=100'); // Asumiendo que trae todo
+            // Traemos todo el catálogo
+            const response = await api.get('/categorias/?limit=200'); // Aumenté el límite por si acaso
             const lista = Array.isArray(response.data) ? response.data : [];
             
-            // Filtramos usando el dato real que me diste
-            // Solo pasan: 'Servicios Básicos', 'Mantenimiento', 'Sueldos'
-            return lista.filter(c => 
-                c.activo === true && 
-                c.tipo === 'Egreso' // Coincide con tu CSV: "Egreso"
-            );
+            // --- FILTRO CORREGIDO ---
+            return lista.filter(c => {
+                // 1. Normalizamos a mayúsculas para evitar errores ('Egreso' vs 'EGRESO')
+                const tipoNormalizado = (c.tipo || '').toUpperCase();
+                const codigoStr = String(c.codigo || '');
+
+                // 2. Condición: 
+                //    - Que sea tipo EGRESO  O  que el código empiece con '5'
+                //    - Y MUY IMPORTANTE: Que NO sea un Rubro (Carpeta)
+                const esGasto = tipoNormalizado === 'EGRESO' || codigoStr.startsWith('5');
+                const esImputable = !c.es_rubro || c.es_rubro === false || c.es_rubro === 'false';
+
+                return c.activo && esGasto && esImputable;
+            });
+
         } catch (error) {
-            console.error("Error cargando catálogo:", error);
+            console.error("Error cargando cuentas contables:", error);
             return [];
         }
     },
 
-    // 2. Tipos de Egreso (Cheque, Transferencia, etc.)
+    // 2. Tipos de Egreso / Grupos (Facturas, Recibos)
     obtenerTiposDocumento: async () => {
         try {
             const response = await api.get('/tipos-egreso/?limit=100');
             const lista = Array.isArray(response.data) ? response.data : [];
             
-            // Solo activos
             return lista.filter(t => t.activo === true);
         } catch (error) {
-            console.error("Error cargando tipos egreso:", error);
+            console.error("Error cargando tipos de documento:", error);
             return [];
         }
     }

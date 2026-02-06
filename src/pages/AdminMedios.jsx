@@ -4,22 +4,23 @@ import {
     TableContainer, TableHead, TableRow, Paper, Dialog, 
     DialogTitle, DialogContent, DialogActions, TextField, Grid, 
     Chip, IconButton, FormControlLabel, Switch, Tooltip,
-    DialogContentText, MenuItem // <--- AGREGADO: MenuItem para el Select
+    DialogContentText, MenuItem, InputAdornment
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
-import SavingsIcon from '@mui/icons-material/Savings'; // Icono para cuenta contable
+import SavingsIcon from '@mui/icons-material/Savings'; 
+import DoNotDisturbOnIcon from '@mui/icons-material/DoNotDisturbOn'; // Icono Límite
 
 // IMPORTAMOS TUS SERVICIOS
 import { mediosService } from '../services/mediosService';
-import { categoriasService } from '../services/categoriasService'; // <--- NUEVO IMPORT
+import { categoriasService } from '../services/categoriasService';
 
 const AdminMedios = () => {
     const [medios, setMedios] = useState([]);
-    const [categorias, setCategorias] = useState([]); // <--- NUEVO ESTADO: Lista de Cuentas
+    const [categorias, setCategorias] = useState([]); 
     
     // Modal de Crear/Editar
     const [openModal, setOpenModal] = useState(false);
@@ -30,12 +31,13 @@ const AdminMedios = () => {
     const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
     const [medioAEliminar, setMedioAEliminar] = useState(null); 
 
-    // Estado Formulario (Actualizado con id_catalogo)
+    // Estado Formulario
     const [formulario, setFormulario] = useState({
         nombre: '', 
-        tipo: '', 
+        tipo: 'efectivo', // Valor por defecto seguro
         requiere_referencia: false, 
-        id_catalogo: '', // <--- NUEVO CAMPO OBLIGATORIO
+        id_catalogo: '', 
+        limite_maximo: 0, // <--- NUEVO CAMPO (Regla 1000 Bs)
         activo: true
     });
 
@@ -47,9 +49,14 @@ const AdminMedios = () => {
 
             // 2. Cargar Categorías (Cuentas)
             const dataCats = await categoriasService.obtenerTodas();
-            // Filtramos solo Ingresos (Cajas y Bancos)
-            const cuentasFiltradas = dataCats.filter(c => c.tipo === 'INGRESO' || c.tipo === 'Ingreso');
-            setCategorias(cuentasFiltradas);
+            
+            // --- CORRECCIÓN CRÍTICA CONTABLE ---
+            // Las Billeteras son ACTIVOS (Grupo 1), NO Ingresos (Grupo 4).
+            // Filtramos todo lo que sea Tipo 'ACTIVO' o empiece con código '1.'
+            const cuentasActivo = dataCats.filter(c => 
+                c.tipo === 'ACTIVO' || c.tipo === 'Activo' || c.codigo.startsWith('1.')
+            );
+            setCategorias(cuentasActivo);
 
         } catch (error) {
             console.error("Error al cargar datos", error);
@@ -64,29 +71,31 @@ const AdminMedios = () => {
     };
 
     const handleGuardar = async () => {
-        // 1. VALIDACIÓN OBLIGATORIA
+        // VALIDACIÓN
         if (!formulario.id_catalogo) {
-            alert("⚠️ Error: Debes seleccionar una Cuenta Contable de Destino (Caja o Banco).");
-            return; // <--- ESTO DETIENE EL ENVÍO
-        }
-        
-        // Validación simple
-        if (!formulario.id_catalogo) {
-            alert("Debe seleccionar una Cuenta Contable de Destino.");
+            alert("⚠️ Error: Debes vincular una Cuenta Contable de ACTIVO (Ej: Caja Principal).");
             return;
         }
-
+        
         try {
+            // Convertir tipos si es necesario
+            const payload = {
+                ...formulario,
+                limite_maximo: parseFloat(formulario.limite_maximo) || 0
+            };
+
             if (modoEdicion) {
-                await mediosService.actualizarMedio(idEdicion, formulario);
+                await mediosService.actualizarMedio(idEdicion, payload);
             } else {
-                await mediosService.crearMedio(formulario);
+                await mediosService.crearMedio(payload);
             }
             setOpenModal(false);
             cargarDatos();
         } catch (error) {
             console.error(error);
-            alert("Error al guardar: " + (error.response?.data?.detail || "Error desconocido"));
+            // Mostrar mensaje bonito del backend
+            const msg = error.response?.data?.detail || "Error desconocido";
+            alert("Error: " + msg);
         }
     };
 
@@ -97,7 +106,8 @@ const AdminMedios = () => {
             nombre: row.nombre,
             tipo: row.tipo,
             requiere_referencia: row.requiere_referencia,
-            id_catalogo: row.id_catalogo, // <--- CARGAR EL DATO EXISTENTE
+            id_catalogo: row.id_catalogo || '', 
+            limite_maximo: row.limite_maximo || 0, // <--- CARGAR LÍMITE
             activo: row.activo
         });
         setOpenModal(true);
@@ -117,7 +127,8 @@ const AdminMedios = () => {
             setOpenDeleteDialog(false); 
             setMedioAEliminar(null);    
         } catch (error) {
-            alert("No se pudo eliminar. Probablemente tiene transacciones.");
+            const msg = error.response?.data?.detail || "No se pudo eliminar.";
+            alert(msg);
             setOpenDeleteDialog(false);
         }
     };
@@ -125,34 +136,34 @@ const AdminMedios = () => {
     // Helper para mostrar nombre de la cuenta en la tabla
     const getNombreCuenta = (id) => {
         const cat = categorias.find(c => c.id_catalogo === id);
-        return cat ? cat.nombre_cuenta : 'Sin asignar';
+        return cat ? `${cat.codigo} - ${cat.nombre_cuenta}` : 'Sin asignar';
     };
 
     return (
-        <Container maxWidth="lg" sx={{ mt: 2 }}> {/* Aumenté a 'lg' para que quepa la nueva columna */}
+        <Container maxWidth="lg" sx={{ mt: 2 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center' }}>
-                    <AccountBalanceWalletIcon sx={{ mr: 1 }} /> Medios de Ingreso
+                <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', color: '#2e7d32', fontWeight: 'bold' }}>
+                    <AccountBalanceWalletIcon sx={{ mr: 1 }} /> Billeteras y Bancos
                 </Typography>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={() => {
+                <Button variant="contained" color="success" startIcon={<AddIcon />} onClick={() => {
                     setModoEdicion(false);
-                    // Resetear formulario con id_catalogo vacío
-                    setFormulario({ nombre: '', tipo: '', id_catalogo: '', requiere_referencia: false, activo: true });
+                    // Resetear form
+                    setFormulario({ nombre: '', tipo: 'efectivo', id_catalogo: '', requiere_referencia: false, limite_maximo: 0, activo: true });
                     setOpenModal(true);
                 }}>
-                    Nuevo Medio
+                    Nueva Billetera
                 </Button>
             </div>
 
-            <TableContainer component={Paper}>
+            <TableContainer component={Paper} elevation={2}>
                 <Table>
-                    <TableHead sx={{ backgroundColor: '#f5f5f5' }}>
+                    <TableHead sx={{ backgroundColor: '#e8f5e9' }}>
                         <TableRow>
-                            <TableCell><strong>Nombre</strong></TableCell>
+                            <TableCell><strong>Nombre Billetera</strong></TableCell>
                             <TableCell><strong>Tipo</strong></TableCell>
-                            {/* NUEVA COLUMNA */}
-                            <TableCell><strong>Cuenta Destino (Contable)</strong></TableCell> 
-                            <TableCell align="center"><strong>Requiere Ref.</strong></TableCell>
+                            <TableCell><strong>Cuenta Contable (Activo)</strong></TableCell> 
+                            <TableCell align="center"><strong>Límite Gasto</strong></TableCell>
+                            <TableCell align="center"><strong>Ref. Obligatoria</strong></TableCell>
                             <TableCell align="center"><strong>Estado</strong></TableCell>
                             <TableCell align="center"><strong>Acciones</strong></TableCell>
                         </TableRow>
@@ -160,16 +171,31 @@ const AdminMedios = () => {
                     <TableBody>
                         {medios.map((row) => (
                             <TableRow key={row.id_medio_ingreso} hover>
-                                <TableCell>{row.nombre}</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>{row.nombre}</TableCell>
                                 <TableCell>{row.tipo}</TableCell>
                                 
-                                {/* DATO NUEVO EN TABLA */}
-                                <TableCell sx={{ color: 'primary.main', fontWeight: 'medium' }}>
+                                {/* COLUMNA CUENTA CONTABLE */}
+                                <TableCell sx={{ color: 'text.secondary', fontFamily: 'monospace' }}>
                                     {getNombreCuenta(row.id_catalogo)}
                                 </TableCell>
 
+                                {/* COLUMNA LÍMITE */}
                                 <TableCell align="center">
-                                    {row.requiere_referencia ? <ReceiptLongIcon color="action" /> : '-'}
+                                    {row.limite_maximo > 0 ? (
+                                        <Chip 
+                                            icon={<DoNotDisturbOnIcon />} 
+                                            label={`${row.limite_maximo} Bs`} 
+                                            size="small" 
+                                            color="warning" 
+                                            variant="outlined" 
+                                        />
+                                    ) : (
+                                        <span style={{ color: '#bdbdbd' }}>∞</span>
+                                    )}
+                                </TableCell>
+
+                                <TableCell align="center">
+                                    {row.requiere_referencia ? <ReceiptLongIcon color="action" fontSize="small" /> : '-'}
                                 </TableCell>
                                 <TableCell align="center">
                                     <Chip 
@@ -179,23 +205,20 @@ const AdminMedios = () => {
                                     />
                                 </TableCell>
                                 <TableCell align="center">
-                                    <Tooltip title={row.nombre.toLowerCase() === 'efectivo' ? "Registro del Sistema" : "Editar"}>
+                                    <Tooltip title={row.nombre.toLowerCase().includes('efectivo') ? "Edición Limitada" : "Editar"}>
                                         <span>
-                                            <IconButton 
-                                                color="primary" 
-                                                onClick={() => handleAbrirEditar(row)}
-                                                disabled={row.nombre.toLowerCase() === 'efectivo'}
-                                            >
+                                            <IconButton color="primary" onClick={() => handleAbrirEditar(row)} size="small">
                                                 <EditIcon />
                                             </IconButton>
                                         </span>
                                     </Tooltip>
-                                    <Tooltip title="Eliminar / Desactivar">
+                                    <Tooltip title="Eliminar">
                                         <span>
                                             <IconButton 
                                                 color="error" 
-                                                disabled={row.nombre.toLowerCase() === 'efectivo'}
+                                                disabled={row.nombre.toLowerCase().includes('efectivo')}
                                                 onClick={() => handleClickEliminar(row)}
+                                                size="small"
                                             >
                                                 <DeleteIcon />
                                             </IconButton>
@@ -210,12 +233,14 @@ const AdminMedios = () => {
 
             {/* MODAL FORMULARIO */}
             <Dialog open={openModal} onClose={() => setOpenModal(false)} maxWidth="sm" fullWidth>
-                 <DialogTitle>{modoEdicion ? 'Editar Medio' : 'Nuevo Medio'}</DialogTitle>
+                 <DialogTitle sx={{ bgcolor: '#2e7d32', color: 'white' }}>
+                    {modoEdicion ? 'Editar Billetera' : 'Nueva Billetera'}
+                 </DialogTitle>
                  <DialogContent>
                     <Grid container spacing={2} sx={{ mt: 1 }}>
                         <Grid item xs={12} sm={6}>
                             <TextField 
-                                label="Nombre" 
+                                label="Nombre (Ej: Caja Chica)" 
                                 name="nombre" 
                                 fullWidth required 
                                 value={formulario.nombre} 
@@ -224,7 +249,6 @@ const AdminMedios = () => {
                         </Grid>
                         
                         <Grid item xs={12} sm={6}>
-                            {/* Convertido a Select para consistencia, aunque puede ser texto */}
                             <TextField 
                                 select 
                                 label="Tipo Sistema" 
@@ -234,24 +258,23 @@ const AdminMedios = () => {
                                 onChange={handleChange}
                             >
                                 <MenuItem value="efectivo">Efectivo</MenuItem>
-                                <MenuItem value="transferencia">Transferencia</MenuItem>
-                                <MenuItem value="qr">QR</MenuItem>
+                                <MenuItem value="banco">Banco / Transferencia</MenuItem>
+                                <MenuItem value="qr">QR Digital</MenuItem>
                                 <MenuItem value="cheque">Cheque</MenuItem>
-                                <MenuItem value="otro">Otro</MenuItem>
                             </TextField>
                         </Grid>
 
-                        {/* --- NUEVO CAMPO CRÍTICO: SELECTOR DE CUENTA CONTABLE --- */}
+                        {/* SELECTOR DE CUENTA CONTABLE (SOLO ACTIVOS) */}
                         <Grid item xs={12}>
                             <TextField
                                 select
-                                label="Cuenta Contable de Destino"
+                                label="Vincular a Cuenta de Activo"
                                 name="id_catalogo"
                                 value={formulario.id_catalogo}
                                 onChange={handleChange}
                                 fullWidth
                                 required
-                                helperText="¿Dónde entra el dinero físicamente?"
+                                helperText="Seleccione la cuenta contable donde se guardará el dinero."
                                 InputProps={{
                                     startAdornment: <SavingsIcon color="action" sx={{ mr: 1 }} />,
                                 }}
@@ -259,15 +282,30 @@ const AdminMedios = () => {
                                 {categorias.length > 0 ? (
                                     categorias.map((cat) => (
                                         <MenuItem key={cat.id_catalogo} value={cat.id_catalogo}>
-                                            {cat.nombre_cuenta}
+                                            <strong>{cat.codigo}</strong> - {cat.nombre_cuenta}
                                         </MenuItem>
                                     ))
                                 ) : (
-                                    <MenuItem value="" disabled>No hay cuentas de Ingreso creadas</MenuItem>
+                                    <MenuItem value="" disabled>No hay cuentas de ACTIVO creadas</MenuItem>
                                 )}
                             </TextField>
                         </Grid>
-                        {/* -------------------------------------------------------- */}
+
+                        {/* CAMPO LÍMITE DE GASTO */}
+                        <Grid item xs={12} sm={6}>
+                            <TextField 
+                                label="Límite Máximo por Gasto" 
+                                name="limite_maximo" 
+                                type="number"
+                                fullWidth 
+                                value={formulario.limite_maximo} 
+                                onChange={handleChange} 
+                                helperText="0 = Sin límite (Ideal para Bancos)"
+                                InputProps={{
+                                    startAdornment: <InputAdornment position="start">Bs</InputAdornment>,
+                                }}
+                            />
+                        </Grid>
 
                         <Grid item xs={12} sm={6}>
                             <FormControlLabel 
@@ -275,36 +313,32 @@ const AdminMedios = () => {
                                 label="Exigir Nro. Documento" 
                             />
                         </Grid>
-                        <Grid item xs={12} sm={6}>
+                        
+                        <Grid item xs={12}>
                             <FormControlLabel 
                                 control={<Switch checked={formulario.activo} onChange={handleChange} name="activo" color="success" />} 
-                                label="Activo / Visible" 
+                                label="Medio Activo" 
                             />
                         </Grid>
                     </Grid>
                  </DialogContent>
-                 <DialogActions>
-                    <Button onClick={() => setOpenModal(false)} color="secondary">Cancelar</Button>
-                    <Button onClick={handleGuardar} variant="contained" color="primary">Guardar</Button>
+                 <DialogActions sx={{ p: 2 }}>
+                    <Button onClick={() => setOpenModal(false)} color="inherit">Cancelar</Button>
+                    <Button onClick={handleGuardar} variant="contained" color="success">Guardar</Button>
                  </DialogActions>
             </Dialog>
 
-            {/* DIALOGO DE CONFIRMACIÓN (Sin cambios) */}
+            {/* DIALOGO CONFIRMACIÓN */}
             <Dialog open={openDeleteDialog} onClose={() => setOpenDeleteDialog(false)}>
-                <DialogTitle>{"¿Confirmar acción?"}</DialogTitle>
+                <DialogTitle>Confirmar eliminación</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        ¿Estás seguro que deseas eliminar o desactivar el medio de ingreso: 
-                        <strong> {medioAEliminar?.nombre}</strong>?
-                        <br/><br/>
-                        <small>Si ya tiene transacciones, se desactivará en lugar de borrarse.</small>
+                        ¿Eliminar la billetera <strong>{medioAEliminar?.nombre}</strong>?
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setOpenDeleteDialog(false)} color="primary">Cancelar</Button>
-                    <Button onClick={confirmarEliminacion} color="error" variant="contained" autoFocus>
-                        Sí, Eliminar
-                    </Button>
+                    <Button onClick={() => setOpenDeleteDialog(false)}>Cancelar</Button>
+                    <Button onClick={confirmarEliminacion} color="error" variant="contained">Eliminar</Button>
                 </DialogActions>
             </Dialog>
 
